@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manithy-sdk"
+version = "0.1.0"
+description = "Manithy SDK — Authority-Grade Audit Capture (Zero Dependencies)"
+readme = "README.md"
+license = { text = "Proprietary" }
+requires-python = ">=3.10"
+
+# ─────────────────────────────────────────────────────────────────────
+# CRITICAL CONSTRAINT: Zero External Dependencies
+# ─────────────────────────────────────────────────────────────────────
+# The Manithy SDK must NEVER add third-party runtime dependencies.
+# Every capability (hashing, JSON handling, I/O) must rely exclusively
+# on the Python standard library.  This guarantees:
+#   1. No supply-chain attack surface.
+#   2. No version-conflict issues in host applications.
+#   3. Deterministic, reproducible builds.
+# ─────────────────────────────────────────────────────────────────────
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
