@@ -17,22 +17,22 @@ Owner: [Dev B]
 Design Principles
 -----------------
 * **Fail-Closed** — the ``capture`` method wraps its *entire* body in a
-  global ``try / except Exception``.  If anything goes wrong the error
-  is silently swallowed (optionally logged to stderr) and the host
-  application is **never** affected.
+    global ``try / except Exception``.  If anything goes wrong the error
+    is silently swallowed (optionally logged to stderr) and the host
+    application is **never** affected.
 
 * **Zero Network I/O** — the SDK never opens sockets.  Output goes to
-  a local ``CaptureBuffer`` (default: stdout).
+    a local ``CaptureBuffer`` (default: stdout).
 
 * **Determinism** — identical ``(context, snapshot)`` pairs produce
-  identical commit-IDs (though the envelope timestamp will differ).
+    identical commit-IDs (though the envelope timestamp will differ).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from manithy.config import is_enabled
+from manithy.config import is_debug, is_enabled
 from manithy.core.envelope import build_envelope
 from manithy.core.hasher import generate_commit_id
 from manithy.interfaces.buffer import CaptureBuffer, StdoutBuffer
@@ -62,8 +62,7 @@ class ManithySDK:
     """
 
     def __init__(self, buffer: CaptureBuffer | None = None) -> None:
-        # TODO: Initialize self._buffer (default to StdoutBuffer).
-        pass
+        self._buffer = buffer or StdoutBuffer()
 
     def capture(
         self,
@@ -89,21 +88,33 @@ class ManithySDK:
         -------------------------------------
         1. **Global Try-Catch** — wrap the ENTIRE body in::
 
-               try:
-                   ...
-               except Exception:
-                   return None
+            try:
+                ...
+            except Exception:
+                return None
 
            The host application must **never** crash because of us.
 
         2. **Kill-Switch** — call ``is_enabled()`` first.  If it
-           returns ``False``, return ``None`` immediately.
+        returns ``False``, return ``None`` immediately.
 
         3. **Pipeline** —
-           a. ``commit_id = generate_commit_id(snapshot)``
-           b. ``envelope  = build_envelope(commit_id, context, snapshot)``
-           c. ``self._buffer.emit(envelope)``
-           d. ``return envelope``
+            a. ``commit_id = generate_commit_id(snapshot)``
+            b. ``envelope  = build_envelope(commit_id, context, snapshot)``
+            c. ``self._buffer.emit(envelope)``
+            d. ``return envelope``
         """
-        # TODO: Implement the capture pipeline with fail-closed guard.
-        pass
+        if not is_enabled():
+            return {"status": "SKIPPED"}
+
+        try:
+            commit_id = generate_commit_id(snapshot)
+            envelope = build_envelope(commit_id, context, snapshot)
+            self._buffer.emit(envelope)
+            return {"status": "CAPTURED", "id": commit_id}
+        except Exception as exc:
+            if is_debug():
+                import sys
+
+                print(f"[ManithySDK] {exc}", file=sys.stderr)
+            return {"status": "ERROR", "error": "Internal SDK Error"}

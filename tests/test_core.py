@@ -50,7 +50,7 @@ def golden_vectors() -> list[dict]:
     that have been validated against the Node.js reference
     implementation.
     """
-    with VECTORS_PATH.open() as f:
+    with VECTORS_PATH.open(encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -61,27 +61,29 @@ class TestCanonical:
 
     def test_sorts_keys(self) -> None:
         """Verify that dictionary keys are sorted lexicographically."""
-        # TODO: Implement — e.g. {"b":1,"a":2} → b'{"a":2,"b":1}'
-        pass
+        result = to_canonical_bytes({"b": 1, "a": 2})
+        assert result == b'{"a":2,"b":1}'
 
     def test_float_to_int_coercion(self) -> None:
         """Verify that 100.0 becomes 100 in the output."""
-        # TODO: Implement — e.g. {"v":100.0} → b'{"v":100}'
-        pass
+        result = to_canonical_bytes({"v": 100.0})
+        assert result == b'{"v":100}'
 
     def test_nested_sort_and_coercion(self) -> None:
         """Verify recursion into nested dicts and lists."""
-        # TODO: Implement with a deeply nested structure.
-        pass
+        data = {"b": 1, "a": [3.0, {"d": 4, "c": 5}]}
+        result = to_canonical_bytes(data)
+        assert result == b'{"a":[3,{"c":5,"d":4}],"b":1}'
 
     def test_golden_vectors(self, golden_vectors: list[dict]) -> None:
         """Validate canonical output against golden vectors."""
-        # TODO: Skip if vectors are empty; iterate and assert.
         if not golden_vectors:
             pytest.skip("No golden vectors defined yet")
         for vec in golden_vectors:
             result = to_canonical_bytes(vec["input"])
-            assert result == vec["expected_canonical"].encode("utf-8")
+            assert result == vec["expected_canonical"].encode("utf-8"), (
+                f"Vector '{vec.get('name', '?')}' canonical mismatch"
+            )
 
 
 # ── Hasher Tests ─────────────────────────────────────────────────────
@@ -91,13 +93,14 @@ class TestHasher:
 
     def test_determinism(self) -> None:
         """Same input must always produce the same commit-ID."""
-        # TODO: Implement — call twice, assert equal.
-        pass
+        data = {"x": 42}
+        assert generate_commit_id(data) == generate_commit_id(data)
 
     def test_hex_format(self) -> None:
         """Commit-ID must be a 64-char lowercase hex string."""
-        # TODO: Implement — assert len==64 and all hex chars.
-        pass
+        result = generate_commit_id({"key": "value"})
+        assert len(result) == 64
+        assert all(c in "0123456789abcdef" for c in result)
 
     def test_golden_vectors(self, golden_vectors: list[dict]) -> None:
         """Validate commit-ID against golden vectors."""
@@ -105,7 +108,9 @@ class TestHasher:
             pytest.skip("No golden vectors defined yet")
         for vec in golden_vectors:
             result = generate_commit_id(vec["input"])
-            assert result == vec["expected_commit_id"]
+            assert result == vec["expected_hash"], (
+                f"Vector '{vec.get('name', '?')}' hash mismatch"
+            )
 
 
 # ── Envelope Tests ───────────────────────────────────────────────────
@@ -115,20 +120,23 @@ class TestEnvelope:
 
     def test_schema_keys(self) -> None:
         """Envelope must contain exactly: spec, id, meta, data."""
-        # TODO: Implement — build envelope, assert key set.
-        pass
+        envelope = build_envelope("abc123", {"actor": "u1"}, {"k": 1})
+        assert set(envelope.keys()) == {"spec", "id", "meta", "data"}
 
     def test_spec_version(self) -> None:
         """``spec`` must always be '1.0'."""
-        # TODO: Implement.
-        pass
+        envelope = build_envelope("abc123", {}, {})
+        assert envelope["spec"] == "1.0"
 
     def test_meta_contains_timestamp(self) -> None:
         """``meta.ts`` must be present and look like ISO-8601."""
-        # TODO: Implement.
-        pass
+        envelope = build_envelope("abc123", {}, {})
+        assert "ts" in envelope["meta"]
+        assert "T" in envelope["meta"]["ts"]  # ISO-8601 contains 'T'
 
     def test_context_merged_into_meta(self) -> None:
         """All context keys must appear in ``meta``."""
-        # TODO: Implement.
-        pass
+        ctx = {"actor": "user-1", "action": "approve"}
+        envelope = build_envelope("abc123", ctx, {})
+        assert envelope["meta"]["actor"] == "user-1"
+        assert envelope["meta"]["action"] == "approve"

@@ -34,6 +34,7 @@ Constraints
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 
@@ -58,19 +59,13 @@ def build_envelope(
     Returns
     -------
     dict[str, Any]
-        A dictionary with four top-level keys:
-
-        * ``spec`` — always ``"1.0"``.
-        * ``id``   — the *commit_id*.
-        * ``meta`` — ``{"ts": "<ISO-8601>", **context}``.
-        * ``data`` — the *snapshot*.
-
-    Implementation Notes (TODO)
-    ---------------------------
-    1. Generate an ISO-8601 UTC timestamp string.
-    2. Build the ``meta`` dict by merging ``{"ts": ts}`` with *context*.
-    3. Return ``{"spec": "1.0", "id": commit_id, "meta": meta,
-       "data": snapshot}``.
+        A dictionary with keys: ``spec``, ``id``, ``meta``, ``data``.
     """
-    # TODO: Implement envelope construction.
-    pass
+    ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    meta = {"ts": ts, **context}
+    return {
+        "spec": "1.0",
+        "id": commit_id,
+        "meta": meta,
+        "data": snapshot,
+    }

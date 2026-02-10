@@ -38,7 +38,39 @@ b'{"a":[3,{"c":5,"d":4}],"b":1}'
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+
+def _normalize(data: Any, _seen: set) -> Any:
+    """Recursively normalize *data* for deterministic serialization.
+
+    - Sorts dict keys lexicographically.
+    - Converts whole-number floats to ints (the "float trap").
+    - Detects circular references via object-id tracking.
+    """
+    obj_id = id(data)
+    if isinstance(data, (dict, list)):
+        if obj_id in _seen:
+            raise ValueError("Circular reference detected")
+        _seen.add(obj_id)
+
+    if isinstance(data, dict):
+        result = {k: _normalize(v, _seen) for k, v in sorted(data.items())}
+        _seen.discard(obj_id)
+        return result
+
+    if isinstance(data, list):
+        result = [_normalize(item, _seen) for item in data]
+        _seen.discard(obj_id)
+        return result
+
+    if isinstance(data, float):
+        if data.is_integer():
+            return int(data)
+        return data
+
+    return data
 
 
 def to_canonical_bytes(data: Any) -> bytes:
@@ -60,17 +92,8 @@ def to_canonical_bytes(data: Any) -> bytes:
     ------
     TypeError
         If *data* contains types that are not JSON-serializable.
-
-    Implementation Notes (TODO)
-    ---------------------------
-    1. Walk the structure **recursively**.
-       - ``dict``  → sort keys, recurse into values.
-       - ``list``  → recurse into each element.
-       - ``float`` → convert to ``int`` when ``value == int(value)``
-                      (use ``float.is_integer()``).
-    2. Serialize with ``json.dumps(separators=(',', ':'),
-       sort_keys=False)`` (you already sorted manually).
-    3. Encode the resulting string to ``bytes`` via ``.encode('utf-8')``.
+    ValueError
+        If *data* contains circular references.
     """
-    # TODO: Implement recursive canonicalization logic.
-    pass
+    normalized = _normalize(data, set())
+    return json.dumps(normalized, separators=(",", ":"), sort_keys=False).encode("utf-8")
