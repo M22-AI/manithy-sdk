@@ -53,6 +53,7 @@ def _capture_kwargs() -> dict[str, Any]:
             "original_payment_state_known": True,
             "chargeback_state_known": False,
         },
+        "reentrancy_guard": "SINGLE_CAPTURE_ENFORCED",
     }
 
 
@@ -134,12 +135,12 @@ class TestFailClosed:
         assert result["status"] == "ERROR"
         assert result["error"] == "Internal SDK Error"
 
-    def test_invalid_boundary_kind_does_not_raise(self) -> None:
-        """Passing invalid boundary_kind must return ERROR, not raise."""
+    def test_invalid_boundary_kind_type_does_not_raise(self) -> None:
+        """Passing non-str boundary_kind must return ERROR, not raise."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
         kwargs = _capture_kwargs()
-        kwargs["boundary_kind"] = "NOT_A_REAL_KIND"
+        kwargs["boundary_kind"] = 123  # type: ignore[assignment]
         result = sdk.capture(**kwargs)
         assert result["status"] == "ERROR"
         assert result["error"] == "Internal SDK Error"

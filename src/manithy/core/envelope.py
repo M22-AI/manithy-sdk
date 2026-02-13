@@ -46,7 +46,6 @@ Blocks
 
 from __future__ import annotations
 
-import enum
 from typing import Any
 
 SCHEMA_ID = "manithy.commit_boundary_event.v1"
@@ -56,31 +55,6 @@ _FORBIDDEN_FIELDS = frozenset({
     "callsite_id",
     "producer_build_id",
 })
-
-
-# ── Closed Enums ─────────────────────────────────────────────────────
-
-
-class BoundaryKind(str, enum.Enum):
-    """Declares which irreversible boundary this event refers to.
-
-    Must be a closed enum — never free text.
-    """
-
-    REFUND_COMMIT_T_MINUS_1 = "REFUND_COMMIT_T_MINUS_1"
-    PAYMENT_COMMIT_T_MINUS_1 = "PAYMENT_COMMIT_T_MINUS_1"
-    CHARGEBACK_COMMIT_T_MINUS_1 = "CHARGEBACK_COMMIT_T_MINUS_1"
-    CAPTURE_COMMIT_T_MINUS_1 = "CAPTURE_COMMIT_T_MINUS_1"
-    VOID_COMMIT_T_MINUS_1 = "VOID_COMMIT_T_MINUS_1"
-
-
-class ReentrancyGuard(str, enum.Enum):
-    """Declares the capture enforcement mode.
-
-    Proof of single-capture discipline.
-    """
-
-    SINGLE_CAPTURE_ENFORCED = "SINGLE_CAPTURE_ENFORCED"
 
 
 # ── Validation Helpers ───────────────────────────────────────────────
@@ -151,20 +125,21 @@ def _validate_availability(
 
 
 def build_commit_boundary_event(
-    boundary_kind: BoundaryKind | str,
+    boundary_kind: str,
     boundary_seq: int,
     same_thread: bool,
     observed: dict[str, Any],
     availability: dict[str, bool],
-    reentrancy_guard: ReentrancyGuard | str = ReentrancyGuard.SINGLE_CAPTURE_ENFORCED,
+    reentrancy_guard: str,
 ) -> dict[str, Any]:
     """Construct a J01 CommitBoundaryEvent dictionary.
 
     Parameters
     ----------
-    boundary_kind : BoundaryKind | str
+    boundary_kind : str
         Which irreversible boundary this event refers to.
-        Must be a member of the :class:`BoundaryKind` enum.
+        The SDK consumer defines the closed enum of valid values;
+        the SDK only enforces that this is a non-empty string.
     boundary_seq : int
         Supports rare cases of multiple irreversible calls in one
         execution path.  Small non-negative integer (0..255).
@@ -176,9 +151,9 @@ def build_commit_boundary_event(
     availability : dict[str, bool]
         Epistemic visibility at t-1.  Each key declares whether a
         fact was knowable before the irreversible action.
-    reentrancy_guard : ReentrancyGuard | str
-        Capture enforcement mode.  Defaults to
-        ``SINGLE_CAPTURE_ENFORCED``.
+    reentrancy_guard : str
+        Capture enforcement mode.  The SDK consumer defines the
+        closed enum of valid values.
 
     Returns
     -------
@@ -193,9 +168,16 @@ def build_commit_boundary_event(
         If a forbidden field is present, ``boundary_seq`` is out of
         range, or an unknown fact leaks into ``observed``.
     """
-    # Coerce string values to enum members (validates membership).
-    boundary_kind = BoundaryKind(boundary_kind)
-    reentrancy_guard = ReentrancyGuard(reentrancy_guard)
+    if not isinstance(boundary_kind, str) or not boundary_kind:
+        raise TypeError(
+            f"boundary_kind must be a non-empty str, "
+            f"got {type(boundary_kind).__name__}"
+        )
+    if not isinstance(reentrancy_guard, str) or not reentrancy_guard:
+        raise TypeError(
+            f"reentrancy_guard must be a non-empty str, "
+            f"got {type(reentrancy_guard).__name__}"
+        )
 
     _validate_boundary_seq(boundary_seq)
 
@@ -209,10 +191,10 @@ def build_commit_boundary_event(
 
     return {
         "schema_id": SCHEMA_ID,
-        "boundary_kind": boundary_kind.value,
+        "boundary_kind": boundary_kind,
         "boundary_seq": boundary_seq,
         "same_thread": same_thread,
-        "reentrancy_guard": reentrancy_guard.value,
+        "reentrancy_guard": reentrancy_guard,
         "observed": dict(observed),
         "availability": dict(availability),
     }

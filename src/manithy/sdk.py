@@ -36,11 +36,7 @@ from __future__ import annotations
 from typing import Any
 
 from manithy.config import is_debug, is_enabled
-from manithy.core.envelope import (
-    BoundaryKind,
-    ReentrancyGuard,
-    build_commit_boundary_event,
-)
+from manithy.core.envelope import build_commit_boundary_event
 from manithy.core.hasher import generate_commit_id
 from manithy.interfaces.buffer import CaptureBuffer, StdoutBuffer
 
@@ -71,6 +67,7 @@ class ManithySDK:
     ...         "original_payment_state_known": True,
     ...         "chargeback_state_known": False,
     ...     },
+    ...     reentrancy_guard="SINGLE_CAPTURE_ENFORCED",
     ... )
     """
 
@@ -79,12 +76,12 @@ class ManithySDK:
 
     def capture(
         self,
-        boundary_kind: BoundaryKind | str,
+        boundary_kind: str,
         boundary_seq: int,
         same_thread: bool,
         observed: dict[str, Any],
         availability: dict[str, bool],
-        reentrancy_guard: ReentrancyGuard | str = ReentrancyGuard.SINGLE_CAPTURE_ENFORCED,
+        reentrancy_guard: str,
     ) -> dict[str, Any] | None:
         """Capture a J01 CommitBoundaryEvent.
 
@@ -93,8 +90,9 @@ class ManithySDK:
 
         Parameters
         ----------
-        boundary_kind : BoundaryKind | str
+        boundary_kind : str
             Which irreversible boundary this event refers to.
+            The valid values are defined by the SDK consumer.
         boundary_seq : int
             Sequence number for multiple irreversible calls in one path.
         same_thread : bool
@@ -103,8 +101,8 @@ class ManithySDK:
             Runtime facts already resolved (primitives only).
         availability : dict[str, bool]
             Epistemic visibility at t-1.
-        reentrancy_guard : ReentrancyGuard | str
-            Capture enforcement mode.
+        reentrancy_guard : str
+            Capture enforcement mode.  Defined by the SDK consumer.
 
         Returns
         -------

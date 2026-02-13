@@ -32,8 +32,6 @@ import pytest
 from manithy.core.canonical import to_canonical_bytes
 from manithy.core.envelope import (
     SCHEMA_ID,
-    BoundaryKind,
-    ReentrancyGuard,
     build_commit_boundary_event,
 )
 from manithy.core.hasher import generate_commit_id
@@ -125,7 +123,7 @@ class TestHasher:
 def _make_event(**overrides: Any) -> dict[str, Any]:
     """Helper: build a valid J01 event with sensible defaults."""
     defaults: dict[str, Any] = {
-        "boundary_kind": BoundaryKind.REFUND_COMMIT_T_MINUS_1,
+        "boundary_kind": "REFUND_COMMIT_T_MINUS_1",
         "boundary_seq": 1,
         "same_thread": True,
         "observed": {
@@ -138,6 +136,7 @@ def _make_event(**overrides: Any) -> dict[str, Any]:
             "original_payment_state_known": True,
             "chargeback_state_known": False,
         },
+        "reentrancy_guard": "SINGLE_CAPTURE_ENFORCED",
     }
     defaults.update(overrides)
     return build_commit_boundary_event(**defaults)
@@ -164,15 +163,22 @@ class TestCommitBoundaryEvent:
         event = _make_event()
         assert event["schema_id"] == SCHEMA_ID
 
-    def test_boundary_kind_enum(self) -> None:
-        """``boundary_kind`` must be a valid enum value."""
+    def test_boundary_kind_accepts_str(self) -> None:
+        """``boundary_kind`` accepts any non-empty string (consumer-defined)."""
         event = _make_event(boundary_kind="REFUND_COMMIT_T_MINUS_1")
         assert event["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
+        event2 = _make_event(boundary_kind="CUSTOM_DOMAIN_KIND")
+        assert event2["boundary_kind"] == "CUSTOM_DOMAIN_KIND"
 
-    def test_invalid_boundary_kind_rejected(self) -> None:
-        """Free-text boundary_kind must raise ValueError."""
-        with pytest.raises(ValueError):
-            _make_event(boundary_kind="SOME_RANDOM_TEXT")
+    def test_empty_boundary_kind_rejected(self) -> None:
+        """Empty string boundary_kind must raise TypeError."""
+        with pytest.raises(TypeError):
+            _make_event(boundary_kind="")
+
+    def test_non_str_boundary_kind_rejected(self) -> None:
+        """Non-string boundary_kind must raise TypeError."""
+        with pytest.raises(TypeError):
+            _make_event(boundary_kind=123)
 
     def test_boundary_seq_range(self) -> None:
         """boundary_seq must be a small non-negative integer."""
@@ -193,8 +199,8 @@ class TestCommitBoundaryEvent:
         with pytest.raises(TypeError):
             _make_event(same_thread=1)
 
-    def test_reentrancy_guard_default(self) -> None:
-        """Default reentrancy_guard is SINGLE_CAPTURE_ENFORCED."""
+    def test_reentrancy_guard_passthrough(self) -> None:
+        """reentrancy_guard value is passed through as-is."""
         event = _make_event()
         assert event["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
 
