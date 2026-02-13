@@ -37,17 +37,33 @@ class InMemoryBuffer(CaptureBuffer):
 
 # ── SDK Capture Tests ────────────────────────────────────────────────
 
+def _capture_kwargs() -> dict[str, Any]:
+    """Sensible defaults for a valid J01 capture call."""
+    return {
+        "boundary_kind": "REFUND_COMMIT_T_MINUS_1",
+        "boundary_seq": 1,
+        "same_thread": True,
+        "observed": {
+            "action_kind": "REFUND",
+            "amount_minor": 12900,
+            "currency": "EUR",
+        },
+        "availability": {
+            "psp_refund_capability_known": True,
+            "original_payment_state_known": True,
+            "chargeback_state_known": False,
+        },
+    }
+
+
 class TestCapture:
     """Tests for ``ManithySDK.capture``."""
 
-    def test_returns_envelope(self) -> None:
+    def test_returns_captured(self) -> None:
         """capture() must return a dict with status CAPTURED."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
-        result = sdk.capture(
-            context={"actor": "user-1"},
-            snapshot={"amount": 50},
-        )
+        result = sdk.capture(**_capture_kwargs())
         assert result["status"] == "CAPTURED"
         assert "id" in result
         assert len(result["id"]) == 64
@@ -56,15 +72,25 @@ class TestCapture:
         """capture() must call buffer.emit() exactly once."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
-        sdk.capture(context={"actor": "u1"}, snapshot={"k": 1})
+        sdk.capture(**_capture_kwargs())
         assert len(buf.envelopes) == 1
 
-    def test_deterministic_commit_id(self) -> None:
-        """Same snapshot must yield the same commit-ID across calls."""
+    def test_emitted_event_is_j01(self) -> None:
+        """The emitted event must be a valid J01 CommitBoundaryEvent."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
-        r1 = sdk.capture(context={"actor": "u1"}, snapshot={"v": 1})
-        r2 = sdk.capture(context={"actor": "u1"}, snapshot={"v": 1})
+        sdk.capture(**_capture_kwargs())
+        event = buf.envelopes[0]
+        assert event["schema_id"] == "manithy.commit_boundary_event.v1"
+        assert "observed" in event
+        assert "availability" in event
+
+    def test_deterministic_commit_id(self) -> None:
+        """Same observed must yield the same commit-ID across calls."""
+        buf = InMemoryBuffer()
+        sdk = ManithySDK(buffer=buf)
+        r1 = sdk.capture(**_capture_kwargs())
+        r2 = sdk.capture(**_capture_kwargs())
         assert r1["id"] == r2["id"]
 
 
@@ -78,9 +104,7 @@ class TestKillSwitch:
         with mock.patch.dict(os.environ, {"MANITHY_ENABLED": "false"}):
             buf = InMemoryBuffer()
             sdk = ManithySDK(buffer=buf)
-            result = sdk.capture(
-                context={"actor": "u1"}, snapshot={"k": 1}
-            )
+            result = sdk.capture(**_capture_kwargs())
             assert result["status"] == "SKIPPED"
             assert len(buf.envelopes) == 0
 
@@ -91,9 +115,7 @@ class TestKillSwitch:
         with mock.patch.dict(os.environ, env, clear=True):
             buf = InMemoryBuffer()
             sdk = ManithySDK(buffer=buf)
-            result = sdk.capture(
-                context={"actor": "u1"}, snapshot={"k": 1}
-            )
+            result = sdk.capture(**_capture_kwargs())
             assert result["status"] == "CAPTURED"
 
 
@@ -102,23 +124,23 @@ class TestKillSwitch:
 class TestFailClosed:
     """Verify the SDK never crashes the host application."""
 
-    def test_bad_snapshot_does_not_raise(self) -> None:
-        """Passing un-serializable data must return ERROR, not raise."""
+    def test_invalid_observed_does_not_raise(self) -> None:
+        """Passing invalid observed data must return ERROR, not raise."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
-        result = sdk.capture(
-            context={"actor": "u1"}, snapshot={"obj": object()}
-        )
+        kwargs = _capture_kwargs()
+        kwargs["observed"] = {"obj": object()}
+        result = sdk.capture(**kwargs)
         assert result["status"] == "ERROR"
         assert result["error"] == "Internal SDK Error"
 
-    def test_circular_reference_does_not_raise(self) -> None:
-        """Passing a circular reference must return ERROR, not raise."""
+    def test_invalid_boundary_kind_does_not_raise(self) -> None:
+        """Passing invalid boundary_kind must return ERROR, not raise."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
-        circular: dict = {"a": 1}
-        circular["self"] = circular
-        result = sdk.capture(context={"actor": "u1"}, snapshot=circular)
+        kwargs = _capture_kwargs()
+        kwargs["boundary_kind"] = "NOT_A_REAL_KIND"
+        result = sdk.capture(**kwargs)
         assert result["status"] == "ERROR"
         assert result["error"] == "Internal SDK Error"
 
@@ -130,8 +152,6 @@ class TestFailClosed:
                 raise RuntimeError("boom")
 
         sdk = ManithySDK(buffer=BrokenBuffer())
-        result = sdk.capture(
-            context={"actor": "u1"}, snapshot={"k": 1}
-        )
+        result = sdk.capture(**_capture_kwargs())
         assert result["status"] == "ERROR"
         assert result["error"] == "Internal SDK Error"

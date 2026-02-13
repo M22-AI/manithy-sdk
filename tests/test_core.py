@@ -25,11 +25,17 @@ from __future__ import annotations
 
 import json
 import pathlib
+from typing import Any
 
 import pytest
 
 from manithy.core.canonical import to_canonical_bytes
-from manithy.core.envelope import build_envelope
+from manithy.core.envelope import (
+    SCHEMA_ID,
+    BoundaryKind,
+    ReentrancyGuard,
+    build_commit_boundary_event,
+)
 from manithy.core.hasher import generate_commit_id
 
 VECTORS_PATH = pathlib.Path(__file__).parent / "vectors.json"
@@ -113,30 +119,128 @@ class TestHasher:
             )
 
 
-# ── Envelope Tests ───────────────────────────────────────────────────
+# ── J01 CommitBoundaryEvent Tests ────────────────────────────────────
 
-class TestEnvelope:
-    """Tests for ``build_envelope``."""
+
+def _make_event(**overrides: Any) -> dict[str, Any]:
+    """Helper: build a valid J01 event with sensible defaults."""
+    defaults: dict[str, Any] = {
+        "boundary_kind": BoundaryKind.REFUND_COMMIT_T_MINUS_1,
+        "boundary_seq": 1,
+        "same_thread": True,
+        "observed": {
+            "action_kind": "REFUND",
+            "amount_minor": 12900,
+            "currency": "EUR",
+        },
+        "availability": {
+            "psp_refund_capability_known": True,
+            "original_payment_state_known": True,
+            "chargeback_state_known": False,
+        },
+    }
+    defaults.update(overrides)
+    return build_commit_boundary_event(**defaults)
+
+
+class TestCommitBoundaryEvent:
+    """Tests for ``build_commit_boundary_event`` (J01)."""
 
     def test_schema_keys(self) -> None:
-        """Envelope must contain exactly: spec, id, meta, data."""
-        envelope = build_envelope("abc123", {"actor": "u1"}, {"k": 1})
-        assert set(envelope.keys()) == {"spec", "id", "meta", "data"}
+        """Event must contain exactly the J01 top-level keys."""
+        event = _make_event()
+        assert set(event.keys()) == {
+            "schema_id",
+            "boundary_kind",
+            "boundary_seq",
+            "same_thread",
+            "reentrancy_guard",
+            "observed",
+            "availability",
+        }
 
-    def test_spec_version(self) -> None:
-        """``spec`` must always be '1.0'."""
-        envelope = build_envelope("abc123", {}, {})
-        assert envelope["spec"] == "1.0"
+    def test_schema_id(self) -> None:
+        """``schema_id`` must be the pinned v1 identifier."""
+        event = _make_event()
+        assert event["schema_id"] == SCHEMA_ID
 
-    def test_meta_contains_timestamp(self) -> None:
-        """``meta.ts`` must be present and look like ISO-8601."""
-        envelope = build_envelope("abc123", {}, {})
-        assert "ts" in envelope["meta"]
-        assert "T" in envelope["meta"]["ts"]  # ISO-8601 contains 'T'
+    def test_boundary_kind_enum(self) -> None:
+        """``boundary_kind`` must be a valid enum value."""
+        event = _make_event(boundary_kind="REFUND_COMMIT_T_MINUS_1")
+        assert event["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
 
-    def test_context_merged_into_meta(self) -> None:
-        """All context keys must appear in ``meta``."""
-        ctx = {"actor": "user-1", "action": "approve"}
-        envelope = build_envelope("abc123", ctx, {})
-        assert envelope["meta"]["actor"] == "user-1"
-        assert envelope["meta"]["action"] == "approve"
+    def test_invalid_boundary_kind_rejected(self) -> None:
+        """Free-text boundary_kind must raise ValueError."""
+        with pytest.raises(ValueError):
+            _make_event(boundary_kind="SOME_RANDOM_TEXT")
+
+    def test_boundary_seq_range(self) -> None:
+        """boundary_seq must be a small non-negative integer."""
+        event = _make_event(boundary_seq=0)
+        assert event["boundary_seq"] == 0
+        with pytest.raises(ValueError):
+            _make_event(boundary_seq=-1)
+        with pytest.raises(ValueError):
+            _make_event(boundary_seq=256)
+
+    def test_boundary_seq_type(self) -> None:
+        """boundary_seq must be int, not bool or float."""
+        with pytest.raises(TypeError):
+            _make_event(boundary_seq=True)
+
+    def test_same_thread_must_be_bool(self) -> None:
+        """same_thread must be bool."""
+        with pytest.raises(TypeError):
+            _make_event(same_thread=1)
+
+    def test_reentrancy_guard_default(self) -> None:
+        """Default reentrancy_guard is SINGLE_CAPTURE_ENFORCED."""
+        event = _make_event()
+        assert event["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
+
+    def test_observed_primitives_only(self) -> None:
+        """observed values must be str | int | bool — no floats."""
+        with pytest.raises(TypeError):
+            _make_event(observed={"amount": 12.5})
+
+    def test_observed_no_none(self) -> None:
+        """observed values must not be None."""
+        with pytest.raises(TypeError):
+            _make_event(observed={"field": None})
+
+    def test_observed_no_nested_dicts(self) -> None:
+        """observed must not contain nested structures."""
+        with pytest.raises(TypeError):
+            _make_event(observed={"nested": {"a": 1}})
+
+    def test_availability_must_be_bool(self) -> None:
+        """All availability values must be bool."""
+        with pytest.raises(TypeError):
+            _make_event(availability={"some_known": 1})
+
+    def test_unknown_fact_must_not_appear_in_observed(self) -> None:
+        """If availability X_known=False, observed must not have X."""
+        with pytest.raises(ValueError, match="unknown facts"):
+            _make_event(
+                observed={"chargeback_state": "NONE"},
+                availability={"chargeback_state_known": False},
+            )
+
+    def test_forbidden_field_in_observed(self) -> None:
+        """Forbidden joinable fields must be rejected."""
+        with pytest.raises(ValueError, match="forbidden"):
+            _make_event(
+                observed={"producer_invocation_id": "inv_123"},
+            )
+
+    def test_valid_full_event(self) -> None:
+        """A complete valid event must match the J01 shape."""
+        event = _make_event()
+        assert event["schema_id"] == "manithy.commit_boundary_event.v1"
+        assert event["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
+        assert event["boundary_seq"] == 1
+        assert event["same_thread"] is True
+        assert event["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
+        assert event["observed"]["action_kind"] == "REFUND"
+        assert event["observed"]["amount_minor"] == 12900
+        assert event["availability"]["chargeback_state_known"] is False
