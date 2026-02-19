@@ -8,32 +8,35 @@ This is the **only** class that application developers interact with.
 It orchestrates the full capture pipeline:
 
     1. Check the kill-switch (``config.is_enabled``).
-    2. Hash the snapshot to produce a commit-ID.
-    3. Build the proof envelope.
-    4. Emit the envelope through the configured buffer.
+    2. Validate & build the J01 CommitBoundaryEvent.
+    3. Hash the observed block to produce a commit-ID.
+    4. Emit the event through the configured buffer.
 
 Owner: [Dev B]
 
 Design Principles
 -----------------
 * **Fail-Closed** — the ``capture`` method wraps its *entire* body in a
-  global ``try / except Exception``.  If anything goes wrong the error
-  is silently swallowed (optionally logged to stderr) and the host
-  application is **never** affected.
+    global ``try / except Exception``.  If anything goes wrong the error
+    is silently swallowed (optionally logged to stderr) and the host
+    application is **never** affected.
 
 * **Zero Network I/O** — the SDK never opens sockets.  Output goes to
-  a local ``CaptureBuffer`` (default: stdout).
+    a local ``CaptureBuffer`` (default: stdout).
 
-* **Determinism** — identical ``(context, snapshot)`` pairs produce
-  identical commit-IDs (though the envelope timestamp will differ).
+* **Determinism** — identical ``observed`` payloads produce identical
+    commit-IDs.
+
+* **Epistemic Honesty** — the ``availability`` block declares what was
+    knowable at t-1.  Unknown facts must never appear in ``observed``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from manithy.config import is_enabled
-from manithy.core.envelope import build_envelope
+from manithy.config import is_debug, is_enabled
+from manithy.core.envelope import build_commit_boundary_event
 from manithy.core.hasher import generate_commit_id
 from manithy.interfaces.buffer import CaptureBuffer, StdoutBuffer
 
@@ -51,59 +54,79 @@ class ManithySDK:
     -----
     >>> sdk = ManithySDK()
     >>> sdk.capture(
-    ...     context={"actor": "user-42", "action": "approve"},
-    ...     snapshot={"amount": 100.0, "currency": "USD"},
+    ...     boundary_kind="REFUND_COMMIT_T_MINUS_1",
+    ...     boundary_seq=1,
+    ...     same_thread=True,
+    ...     observed={
+    ...         "action_kind": "REFUND",
+    ...         "amount_minor": 12900,
+    ...         "currency": "EUR",
+    ...     },
+    ...     availability={
+    ...         "psp_refund_capability_known": True,
+    ...         "original_payment_state_known": True,
+    ...         "chargeback_state_known": False,
+    ...     },
+    ...     reentrancy_guard="SINGLE_CAPTURE_ENFORCED",
     ... )
-
-    Implementation Notes (TODO)
-    ---------------------------
-    * Store the *buffer* (or default to ``StdoutBuffer()``) in
-      ``self._buffer``.
     """
 
     def __init__(self, buffer: CaptureBuffer | None = None) -> None:
-        # TODO: Initialize self._buffer (default to StdoutBuffer).
-        pass
+        self._buffer = buffer or StdoutBuffer()
 
     def capture(
         self,
-        context: dict[str, Any],
-        snapshot: dict[str, Any],
+        boundary_kind: str,
+        boundary_seq: int,
+        same_thread: bool,
+        observed: dict[str, Any],
+        availability: dict[str, bool],
+        reentrancy_guard: str,
     ) -> dict[str, Any] | None:
-        """Capture an audit proof for the given *snapshot*.
+        """Capture a J01 CommitBoundaryEvent.
+
+        Marks the exact t-1 boundary before an irreversible action and
+        records only facts already resolved in the execution context.
 
         Parameters
         ----------
-        context : dict[str, Any]
-            Metadata describing the event (actor, action, resource …).
-        snapshot : dict[str, Any]
-            The data payload to be hashed and recorded.
+        boundary_kind : str
+            Which irreversible boundary this event refers to.
+            The valid values are defined by the SDK consumer.
+        boundary_seq : int
+            Sequence number for multiple irreversible calls in one path.
+        same_thread : bool
+            Assertion that capture happened same-thread at t-1.
+        observed : dict[str, Any]
+            Runtime facts already resolved (primitives only).
+        availability : dict[str, bool]
+            Epistemic visibility at t-1.
+        reentrancy_guard : str
+            Capture enforcement mode.  Defined by the SDK consumer.
 
         Returns
         -------
         dict[str, Any] | None
-            The proof envelope on success, or ``None`` if the SDK is
-            disabled or an error occurs.
-
-        CRITICAL Implementation Notes (TODO)
-        -------------------------------------
-        1. **Global Try-Catch** — wrap the ENTIRE body in::
-
-               try:
-                   ...
-               except Exception:
-                   return None
-
-           The host application must **never** crash because of us.
-
-        2. **Kill-Switch** — call ``is_enabled()`` first.  If it
-           returns ``False``, return ``None`` immediately.
-
-        3. **Pipeline** —
-           a. ``commit_id = generate_commit_id(snapshot)``
-           b. ``envelope  = build_envelope(commit_id, context, snapshot)``
-           c. ``self._buffer.emit(envelope)``
-           d. ``return envelope``
+            A status dict on success/skip/error.
         """
-        # TODO: Implement the capture pipeline with fail-closed guard.
-        pass
+        if not is_enabled():
+            return {"status": "SKIPPED"}
+
+        try:
+            event = build_commit_boundary_event(
+                boundary_kind=boundary_kind,
+                boundary_seq=boundary_seq,
+                same_thread=same_thread,
+                observed=observed,
+                availability=availability,
+                reentrancy_guard=reentrancy_guard,
+            )
+            commit_id = generate_commit_id(event)
+            self._buffer.emit(event)
+            return {"status": "CAPTURED", "id": commit_id}
+        except Exception as exc:
+            if is_debug():
+                import sys
+
+                print(f"[ManithySDK] {exc}", file=sys.stderr)
+            return {"status": "ERROR", "error": "Internal SDK Error"}

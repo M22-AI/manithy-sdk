@@ -1,2 +1,74 @@
 [
+  {
+    "name": "J01 Refund Boundary",
+    "input": {
+      "schema_id": "manithy.commit_boundary_event.v1",
+      "boundary_kind": "REFUND_COMMIT_T_MINUS_1",
+      "boundary_seq": 1,
+      "same_thread": true,
+      "reentrancy_guard": "SINGLE_CAPTURE_ENFORCED",
+      "observed": {
+        "action_kind": "REFUND",
+        "amount_minor": 12900,
+        "currency": "EUR",
+        "refund_mode": "FULL",
+        "order_channel": "WEB",
+        "payment_method": "CARD",
+        "merchant_region": "EU",
+        "customer_present": false,
+        "operator_initiated": false
+      },
+      "availability": {
+        "psp_refund_capability_known": true,
+        "original_payment_state_known": true,
+        "chargeback_state_known": false
+      }
+    },
+    "expected_canonical": "{\"availability\":{\"chargeback_state_known\":false,\"original_payment_state_known\":true,\"psp_refund_capability_known\":true},\"boundary_kind\":\"REFUND_COMMIT_T_MINUS_1\",\"boundary_seq\":1,\"observed\":{\"action_kind\":\"REFUND\",\"amount_minor\":12900,\"currency\":\"EUR\",\"customer_present\":false,\"merchant_region\":\"EU\",\"operator_initiated\":false,\"order_channel\":\"WEB\",\"payment_method\":\"CARD\",\"refund_mode\":\"FULL\"},\"reentrancy_guard\":\"SINGLE_CAPTURE_ENFORCED\",\"same_thread\":true,\"schema_id\":\"manithy.commit_boundary_event.v1\"}",
+    "expected_hash": "13dfb80b674cb43f00baaa79e0c5bde36c754061c62c969158417a65592c5622"
+  },
+  {
+    "name": "J01 Payment Boundary (minimal observed)",
+    "input": {
+      "schema_id": "manithy.commit_boundary_event.v1",
+      "boundary_kind": "PAYMENT_COMMIT_T_MINUS_1",
+      "boundary_seq": 0,
+      "same_thread": true,
+      "reentrancy_guard": "SINGLE_CAPTURE_ENFORCED",
+      "observed": {
+        "action_kind": "PAYMENT",
+        "amount_minor": 5000,
+        "currency": "USD"
+      },
+      "availability": {
+        "psp_refund_capability_known": false,
+        "original_payment_state_known": true,
+        "chargeback_state_known": false
+      }
+    },
+    "expected_canonical": "{\"availability\":{\"chargeback_state_known\":false,\"original_payment_state_known\":true,\"psp_refund_capability_known\":false},\"boundary_kind\":\"PAYMENT_COMMIT_T_MINUS_1\",\"boundary_seq\":0,\"observed\":{\"action_kind\":\"PAYMENT\",\"amount_minor\":5000,\"currency\":\"USD\"},\"reentrancy_guard\":\"SINGLE_CAPTURE_ENFORCED\",\"same_thread\":true,\"schema_id\":\"manithy.commit_boundary_event.v1\"}",
+    "expected_hash": "b2cf970c8100fc456017109a71adc120054f80b2230937164ab4440b77df1885"
+  },
+  {
+    "name": "J01 Chargeback Boundary (all unknown)",
+    "input": {
+      "schema_id": "manithy.commit_boundary_event.v1",
+      "boundary_kind": "CHARGEBACK_COMMIT_T_MINUS_1",
+      "boundary_seq": 0,
+      "same_thread": true,
+      "reentrancy_guard": "SINGLE_CAPTURE_ENFORCED",
+      "observed": {
+        "action_kind": "CHARGEBACK",
+        "amount_minor": 7500,
+        "currency": "GBP"
+      },
+      "availability": {
+        "psp_refund_capability_known": false,
+        "original_payment_state_known": false,
+        "chargeback_state_known": false
+      }
+    },
+    "expected_canonical": "{\"availability\":{\"chargeback_state_known\":false,\"original_payment_state_known\":false,\"psp_refund_capability_known\":false},\"boundary_kind\":\"CHARGEBACK_COMMIT_T_MINUS_1\",\"boundary_seq\":0,\"observed\":{\"action_kind\":\"CHARGEBACK\",\"amount_minor\":7500,\"currency\":\"GBP\"},\"reentrancy_guard\":\"SINGLE_CAPTURE_ENFORCED\",\"same_thread\":true,\"schema_id\":\"manithy.commit_boundary_event.v1\"}",
+    "expected_hash": "6c33798d9be289eb84cac37c0199d568dafc6542aef60259aad632e6ab955c81"
+  }
 ]

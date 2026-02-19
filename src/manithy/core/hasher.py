@@ -21,7 +21,10 @@ Constraints
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
+
+from manithy.core.canonical import to_canonical_bytes
 
 
 def generate_commit_id(data: Any) -> str:
@@ -36,13 +39,6 @@ def generate_commit_id(data: Any) -> str:
     -------
     str
         A 64-character lowercase hexadecimal SHA-256 digest string.
-
-    Implementation Notes (TODO)
-    ---------------------------
-    1. Call ``to_canonical_bytes(data)`` from ``manithy.core.canonical``
-       to obtain the deterministic byte representation.
-    2. Compute ``hashlib.sha256(canonical_bytes).hexdigest()``.
-    3. Return the hex string.
     """
-    # TODO: Implement SHA-256 hashing of canonical bytes.
-    pass
+    canonical_bytes = to_canonical_bytes(data)
+    return hashlib.sha256(canonical_bytes).hexdigest()

@@ -28,6 +28,7 @@ to grep/filter audit proofs from regular application logs.
 from __future__ import annotations
 
 import abc
+import json
 from typing import Any
 
 
@@ -59,7 +60,7 @@ class StdoutBuffer(CaptureBuffer):
     Implementation Notes (TODO)
     ---------------------------
     1. Serialize *envelope* to compact JSON using
-       ``json.dumps(envelope, separators=(',', ':'))``.
+    ``json.dumps(envelope, separators=(',', ':'))``.
     2. Print ``f"MANITHY_PROOF::{json_str}"`` to stdout via ``print()``.
     """
 
@@ -71,5 +72,5 @@ class StdoutBuffer(CaptureBuffer):
         envelope : dict[str, Any]
             The proof envelope to emit.
         """
-        # TODO: Serialize envelope to compact JSON and print with prefix.
-        pass
+        json_str = json.dumps(envelope, separators=(",", ":"))
+        print(f"MANITHY_PROOF::{json_str}")

@@ -1,25 +1,6 @@
-"""
-manithy.config
-~~~~~~~~~~~~~~
-
-Runtime Configuration & Kill-Switch.
-
-The SDK's behaviour can be controlled at runtime through environment
-variables.  This keeps the SDK inert in environments where audit
-capture should be suppressed (e.g. unit-test runners, CI pipelines)
-without requiring code changes.
-
-Owner: [Dev B]
-
-Environment Variables
----------------------
-``MANITHY_ENABLED``
-    Set to ``"false"`` (case-insensitive) to disable all capture.
-    Any other value (or absence of the variable) means **enabled**.
-    Default: ``True`` (enabled).
-"""
-
 from __future__ import annotations
+
+import os
 
 
 def is_enabled() -> bool:
@@ -38,12 +19,24 @@ def is_enabled() -> bool:
     -------
     bool
         ``True`` if capture should proceed, ``False`` otherwise.
-
-    Implementation Notes (TODO)
-    ---------------------------
-    1. ``import os``
-    2. ``raw = os.environ.get("MANITHY_ENABLED", "true")``
-    3. ``return raw.strip().lower() != "false"``
     """
-    # TODO: Implement environment-variable check.
-    pass
+    raw = os.environ.get("MANITHY_ENABLED", "true")
+    return raw.strip().lower() != "false"
+
+
+def is_debug() -> bool:
+    """Return whether debug mode is enabled.
+
+    Reads the ``MANITHY_DEBUG`` environment variable.
+
+    * If the variable is set to ``"true"`` (case-insensitive) →
+      return ``True``.
+    * Any other value (or absence) → return ``False``.
+
+    Returns
+    -------
+    bool
+        ``True`` if debug logging should be active, ``False`` otherwise.
+    """
+    raw = os.environ.get("MANITHY_DEBUG", "false")
+    return raw.strip().lower() == "true"
