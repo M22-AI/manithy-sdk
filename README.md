@@ -43,6 +43,13 @@ sdk = ManithySDK()
 result = sdk.capture(
     boundary_kind="REFUND_COMMIT_T_MINUS_1",
     boundary_seq=1,
+    tenant_id="FINANCE_DESK",
+    action_class="TRADE_EXECUTION",
+    commit_point_id="REFUND_COMMIT_T_MINUS_1",
+    auth_metadata={
+        "auth_subject": "TRADER_005",
+        "auth_provider": "AUTH_LAYER_V1",
+    },
     same_thread=True,
     observed={
         "action_kind": "REFUND",
@@ -70,7 +77,13 @@ print(result)
 Output (stdout):
 
 ```
-MANITHY_PROOF::{"schema_id":"manithy.commit_boundary_event.v1","boundary_kind":"REFUND_COMMIT_T_MINUS_1","boundary_seq":1,"same_thread":true,"reentrancy_guard":"SINGLE_CAPTURE_ENFORCED","observed":{...},"availability":{...}}
+MANITHY_PROOF::{"kind":"J01.CommitBoundaryEvent","schema_id":"manithy.commit_boundary_event.v2","commit_seq":1,"meta":{"tenant_id":"FINANCE_DESK","action_class":"TRADE_EXECUTION","commit_point_id":"REFUND_COMMIT_T_MINUS_1","auth_subject":"TRADER_005","auth_provider":"AUTH_LAYER_V1"},"boundary":{"boundary_kind":"REFUND_COMMIT_T_MINUS_1","boundary_seq":1,"same_thread":true,"reentrancy_guard":"SINGLE_CAPTURE_ENFORCED"},"adapter_snapshot":{"observed":{...},"availability":{...}},"commit_id":"a3f8c9..."}
+```
+
+Legacy v1 output can still be requested:
+
+```python
+sdk.capture(..., schema_version="v1")
 ```
 
 ## Capture Parameters
@@ -79,10 +92,15 @@ MANITHY_PROOF::{"schema_id":"manithy.commit_boundary_event.v1","boundary_kind":"
 |---|---|---|
 | **`boundary_kind`** | `str` | Which irreversible boundary this event refers to. Consumer-defined closed enum (e.g. `"REFUND_COMMIT_T_MINUS_1"`). |
 | **`boundary_seq`** | `int` | Supports rare cases of multiple irreversible calls in one execution path. Small integer (0–255). |
+| **`tenant_id`** | `str \| None` | Tenant identifier captured in the v2 `meta` block. |
+| **`action_class`** | `str \| None` | Domain action category captured in v2 `meta` (for example: `"TRADE_EXECUTION"`). |
+| **`commit_point_id`** | `str \| None` | Stable business checkpoint ID captured in v2 `meta`, usually equal to `boundary_kind`. |
+| **`auth_metadata`** | `dict[str, Any] \| None` | Additional authentication-layer metadata merged into v2 `meta`. |
 | **`same_thread`** | `bool` | Runtime assertion that capture happened same-thread at t-1. |
 | **`observed`** | `dict[str, str\|int\|bool]` | Runtime facts already resolved in the execution context. Values must be primitives only — no floats, no `None`, no nested structures. |
 | **`availability`** | `dict[str, bool]` | Epistemic visibility at t-1. Each key declares whether a fact was knowable before the irreversible action. |
 | **`reentrancy_guard`** | `str` | Capture enforcement mode. Consumer-defined (e.g. `"SINGLE_CAPTURE_ENFORCED"`). |
+| **`schema_version`** | `str` | Envelope schema version. Default `"v2"`; use `"v1"` for backward compatibility. |
 
 ### The `observed` Block
 
@@ -112,9 +130,9 @@ The following fields must **never** appear in a CommitBoundaryEvent:
 
 | Field | Why Forbidden |
 |---|---|
-| `producer_invocation_id` | High joinability risk. Single-capture is enforced via guard state, not IDs. |
 | `callsite_id` | High joinability risk. |
 | `producer_build_id` | Belongs in PackInit / EvidencePack provenance, not J01. |
+| `producer_invocation_id` | High joinability risk. Single-capture is enforced via guard state, not IDs. |
 
 ## Custom Buffer
 
@@ -164,9 +182,9 @@ export MANITHY_DEBUG=true
 
 1. **Kill-switch check** — reads `MANITHY_ENABLED`. If `"false"`, returns `SKIPPED`.
 2. **Validation** — enforces type constraints on all fields; rejects forbidden fields, floats in `observed`, non-bool in `availability`, and unknown facts that leak into `observed`.
-3. **Event assembly** — builds a J01 `CommitBoundaryEvent` with schema `manithy.commit_boundary_event.v1`.
+3. **Event assembly** — builds a J01 `CommitBoundaryEvent` with schema `manithy.commit_boundary_event.v2` by default (or `v1` when `schema_version="v1"`).
 4. **Hashing** — canonicalizes the event (sorted keys, no whitespace, floats like `100.0` → `100`) and computes SHA-256 → 64-char hex `commit_id`.
-5. **Emit** — writes the event to the configured buffer (default: stdout with `MANITHY_PROOF::` prefix).
+5. **Emit** — writes the event to the configured buffer (default: stdout with `MANITHY_PROOF::` prefix). For v2, `commit_id` is embedded into the emitted envelope.
 
 If any step fails, the error is swallowed and `{"status": "ERROR", "error": "Internal SDK Error"}` is returned. The host application is **never** affected.
 
