@@ -42,6 +42,13 @@ def _capture_kwargs() -> dict[str, Any]:
     return {
         "boundary_kind": "REFUND_COMMIT_T_MINUS_1",
         "boundary_seq": 1,
+        "tenant_id": "FINANCE_DESK",
+        "action_class": "TRADE_EXECUTION",
+        "commit_point_id": "REFUND_COMMIT_T_MINUS_1",
+        "auth_metadata": {
+            "auth_subject": "TRADER_005",
+            "auth_role": "TRADER",
+        },
         "same_thread": True,
         "observed": {
             "action_kind": "REFUND",
@@ -55,6 +62,13 @@ def _capture_kwargs() -> dict[str, Any]:
         },
         "reentrancy_guard": "SINGLE_CAPTURE_ENFORCED",
     }
+
+
+def _capture_kwargs_v1() -> dict[str, Any]:
+    """Legacy v1 capture options."""
+    kwargs = _capture_kwargs()
+    kwargs["schema_version"] = "v1"
+    return kwargs
 
 
 class TestCapture:
@@ -77,14 +91,28 @@ class TestCapture:
         assert len(buf.envelopes) == 1
 
     def test_emitted_event_is_j01(self) -> None:
-        """The emitted event must be a valid J01 CommitBoundaryEvent."""
+        """Default capture emits v2 J01 envelope."""
         buf = InMemoryBuffer()
         sdk = ManithySDK(buffer=buf)
         sdk.capture(**_capture_kwargs())
         event = buf.envelopes[0]
+        assert event["kind"] == "J01.CommitBoundaryEvent"
+        assert event["schema_id"] == "manithy.commit_boundary_event.v2"
+        assert event["meta"]["tenant_id"] == "FINANCE_DESK"
+        assert "boundary" in event
+        assert "adapter_snapshot" in event
+        assert "commit_id" in event
+
+    def test_emitted_event_can_be_v1(self) -> None:
+        """Explicit schema_version=v1 emits legacy envelope shape."""
+        buf = InMemoryBuffer()
+        sdk = ManithySDK(buffer=buf)
+        sdk.capture(**_capture_kwargs_v1())
+        event = buf.envelopes[0]
         assert event["schema_id"] == "manithy.commit_boundary_event.v1"
-        assert "observed" in event
-        assert "availability" in event
+        assert "kind" not in event
+        assert "boundary_kind" in event
+        assert "commit_id" not in event
 
     def test_deterministic_commit_id(self) -> None:
         """Same observed must yield the same commit-ID across calls."""

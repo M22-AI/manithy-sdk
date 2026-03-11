@@ -82,6 +82,11 @@ class ManithySDK:
         observed: dict[str, Any],
         availability: dict[str, bool],
         reentrancy_guard: str,
+        tenant_id: str | None = None,
+        action_class: str | None = None,
+        commit_point_id: str | None = None,
+        auth_metadata: dict[str, Any] | None = None,
+        schema_version: str = "v2",
     ) -> dict[str, Any] | None:
         """Capture a J01 CommitBoundaryEvent.
 
@@ -120,8 +125,15 @@ class ManithySDK:
                 observed=observed,
                 availability=availability,
                 reentrancy_guard=reentrancy_guard,
+                tenant_id=tenant_id,
+                action_class=action_class,
+                commit_point_id=commit_point_id,
+                auth_metadata=auth_metadata,
+                schema_version=schema_version,
             )
             commit_id = generate_commit_id(event)
+            if schema_version == "v2":
+                event["commit_id"] = commit_id
             self._buffer.emit(event)
             return {"status": "CAPTURED", "id": commit_id}
         except Exception as exc:

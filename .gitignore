@@ -30,6 +30,8 @@ Thumbs.db
 htmlcov/
 .coverage
 coverage.xml
+scripts/
+test-output/
 
 # mypy
 .mypy_cache/

@@ -32,6 +32,8 @@ import pytest
 from manithy.core.canonical import to_canonical_bytes
 from manithy.core.envelope import (
     SCHEMA_ID,
+    SCHEMA_ID_V1,
+    SCHEMA_ID_V2,
     build_commit_boundary_event,
 )
 from manithy.core.hasher import generate_commit_id
@@ -149,26 +151,25 @@ class TestCommitBoundaryEvent:
         """Event must contain exactly the J01 top-level keys."""
         event = _make_event()
         assert set(event.keys()) == {
+            "kind",
             "schema_id",
-            "boundary_kind",
-            "boundary_seq",
-            "same_thread",
-            "reentrancy_guard",
-            "observed",
-            "availability",
+            "commit_seq",
+            "meta",
+            "boundary",
+            "adapter_snapshot",
         }
 
     def test_schema_id(self) -> None:
-        """``schema_id`` must be the pinned v1 identifier."""
+        """``schema_id`` must be the pinned v2 identifier."""
         event = _make_event()
         assert event["schema_id"] == SCHEMA_ID
 
     def test_boundary_kind_accepts_str(self) -> None:
         """``boundary_kind`` accepts any non-empty string (consumer-defined)."""
         event = _make_event(boundary_kind="REFUND_COMMIT_T_MINUS_1")
-        assert event["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
+        assert event["boundary"]["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
         event2 = _make_event(boundary_kind="CUSTOM_DOMAIN_KIND")
-        assert event2["boundary_kind"] == "CUSTOM_DOMAIN_KIND"
+        assert event2["boundary"]["boundary_kind"] == "CUSTOM_DOMAIN_KIND"
 
     def test_empty_boundary_kind_rejected(self) -> None:
         """Empty string boundary_kind must raise TypeError."""
@@ -183,7 +184,7 @@ class TestCommitBoundaryEvent:
     def test_boundary_seq_range(self) -> None:
         """boundary_seq must be a small non-negative integer."""
         event = _make_event(boundary_seq=0)
-        assert event["boundary_seq"] == 0
+        assert event["boundary"]["boundary_seq"] == 0
         with pytest.raises(ValueError):
             _make_event(boundary_seq=-1)
         with pytest.raises(ValueError):
@@ -202,7 +203,7 @@ class TestCommitBoundaryEvent:
     def test_reentrancy_guard_passthrough(self) -> None:
         """reentrancy_guard value is passed through as-is."""
         event = _make_event()
-        assert event["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
+        assert event["boundary"]["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
 
     def test_observed_primitives_only(self) -> None:
         """observed values must be str | int | bool — no floats."""
@@ -242,11 +243,32 @@ class TestCommitBoundaryEvent:
     def test_valid_full_event(self) -> None:
         """A complete valid event must match the J01 shape."""
         event = _make_event()
-        assert event["schema_id"] == "manithy.commit_boundary_event.v1"
-        assert event["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
-        assert event["boundary_seq"] == 1
-        assert event["same_thread"] is True
-        assert event["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
-        assert event["observed"]["action_kind"] == "REFUND"
-        assert event["observed"]["amount_minor"] == 12900
-        assert event["availability"]["chargeback_state_known"] is False
+        assert event["schema_id"] == SCHEMA_ID_V2
+        assert event["boundary"]["boundary_kind"] == "REFUND_COMMIT_T_MINUS_1"
+        assert event["boundary"]["boundary_seq"] == 1
+        assert event["boundary"]["same_thread"] is True
+        assert event["boundary"]["reentrancy_guard"] == "SINGLE_CAPTURE_ENFORCED"
+        assert event["adapter_snapshot"]["observed"]["action_kind"] == "REFUND"
+        assert event["adapter_snapshot"]["observed"]["amount_minor"] == 12900
+        assert (
+            event["adapter_snapshot"]["availability"]["chargeback_state_known"] is False
+        )
+
+    def test_v1_compat_shape(self) -> None:
+        """Builder should support the legacy v1 envelope shape."""
+        event = _make_event(schema_version="v1")
+        assert event["schema_id"] == SCHEMA_ID_V1
+        assert set(event.keys()) == {
+            "schema_id",
+            "boundary_kind",
+            "boundary_seq",
+            "same_thread",
+            "reentrancy_guard",
+            "observed",
+            "availability",
+        }
+
+    def test_invalid_schema_version_rejected(self) -> None:
+        """Only v1 and v2 are supported schema versions."""
+        with pytest.raises(ValueError):
+            _make_event(schema_version="v3")

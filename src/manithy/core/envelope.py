@@ -48,7 +48,9 @@ from __future__ import annotations
 
 from typing import Any
 
-SCHEMA_ID = "manithy.commit_boundary_event.v1"
+SCHEMA_ID_V1 = "manithy.commit_boundary_event.v1"
+SCHEMA_ID_V2 = "manithy.commit_boundary_event.v2"
+SCHEMA_ID = SCHEMA_ID_V2
 
 _FORBIDDEN_FIELDS = frozenset({
     "producer_invocation_id",
@@ -131,6 +133,11 @@ def build_commit_boundary_event(
     observed: dict[str, Any],
     availability: dict[str, bool],
     reentrancy_guard: str,
+    tenant_id: str | None = None,
+    action_class: str | None = None,
+    commit_point_id: str | None = None,
+    auth_metadata: dict[str, Any] | None = None,
+    schema_version: str = "v2",
 ) -> dict[str, Any]:
     """Construct a J01 CommitBoundaryEvent dictionary.
 
@@ -189,12 +196,59 @@ def build_commit_boundary_event(
     _validate_observed(observed)
     _validate_availability(availability, observed)
 
+    if schema_version not in {"v1", "v2"}:
+        raise ValueError("schema_version must be 'v1' or 'v2'")
+
+    if tenant_id is not None and (
+        not isinstance(tenant_id, str) or not tenant_id.strip()
+    ):
+        raise TypeError("tenant_id must be a non-empty str when provided")
+
+    if action_class is not None and (
+        not isinstance(action_class, str) or not action_class.strip()
+    ):
+        raise TypeError("action_class must be a non-empty str when provided")
+
+    if commit_point_id is not None and (
+        not isinstance(commit_point_id, str) or not commit_point_id.strip()
+    ):
+        raise TypeError("commit_point_id must be a non-empty str when provided")
+
+    if auth_metadata is not None and not isinstance(auth_metadata, dict):
+        raise TypeError("auth_metadata must be a dict when provided")
+
+    if schema_version == "v1":
+        return {
+            "schema_id": SCHEMA_ID_V1,
+            "boundary_kind": boundary_kind,
+            "boundary_seq": boundary_seq,
+            "same_thread": same_thread,
+            "reentrancy_guard": reentrancy_guard,
+            "observed": dict(observed),
+            "availability": dict(availability),
+        }
+
+    meta: dict[str, Any] = {
+        "tenant_id": tenant_id or "UNKNOWN_TENANT",
+        "action_class": action_class or boundary_kind,
+        "commit_point_id": commit_point_id or boundary_kind,
+    }
+    if auth_metadata:
+        meta.update(auth_metadata)
+
     return {
-        "schema_id": SCHEMA_ID,
-        "boundary_kind": boundary_kind,
-        "boundary_seq": boundary_seq,
-        "same_thread": same_thread,
-        "reentrancy_guard": reentrancy_guard,
-        "observed": dict(observed),
-        "availability": dict(availability),
+        "kind": "J01.CommitBoundaryEvent",
+        "schema_id": SCHEMA_ID_V2,
+        "commit_seq": boundary_seq,
+        "meta": meta,
+        "boundary": {
+            "boundary_kind": boundary_kind,
+            "boundary_seq": boundary_seq,
+            "same_thread": same_thread,
+            "reentrancy_guard": reentrancy_guard,
+        },
+        "adapter_snapshot": {
+            "observed": dict(observed),
+            "availability": dict(availability),
+        },
     }
